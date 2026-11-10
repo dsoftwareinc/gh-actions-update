@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "github-actions-cli"
 version = "1.2.5"
-description = "GitHub Actions CLI - allows updating workflows, etc."
+description = "Find and update outdated actions in GitHub Actions workflows, in local clones or remote repos. Also available as the gh actions-update GitHub CLI extension."
 authors = [{ name = "Daniel Moran", email = "daniel@moransoftware.ca" }]
 requires-python = "~=3.10"
 readme = "README.md"
