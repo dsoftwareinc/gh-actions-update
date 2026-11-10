@@ -1,114 +1,115 @@
-# GitHub Actions CLI
+# gh actions-update
 
-A CLI tool for keeping GitHub Actions workflow files up to date. It works with both local repository clones and remote GitHub repositories.
+A [GitHub CLI](https://cli.github.com/) extension that finds outdated actions in your GitHub Actions workflow files and
+updates them. It works with both local repository clones and remote GitHub repositories.
 
-> [!IMPORTANT]
-> **This project is becoming a GitHub CLI extension.** From v1.2.5 on, the recommended way to install it is
-> `gh extension install dsoftwareinc/gh-actions-update`, which adds the `gh actions-update` command.
-> The repository was renamed from `github-actions-cli` to `gh-actions-update` to match.
-> The `github-actions-cli` package on PyPI still works the same way for now, but new development is focused on the extension.
+> [!NOTE]
+> This project was previously distributed only as the `github-actions-cli` Python package, and the repository was
+> renamed from `github-actions-cli` to `gh-actions-update`. From v1.2.5 on, the GitHub CLI extension is the recommended
+> way to use it. The Python package still works; see [Using the Python package](#using-the-python-package).
 
 ## Installation
 
-### As a GitHub CLI extension
+Requires the [GitHub CLI](https://cli.github.com/) (`gh`).
 
 ```shell
 gh extension install dsoftwareinc/gh-actions-update
 ```
 
-This installs a precompiled binary (no Python needed) and adds the `gh actions-update` command.
-It takes the same options and commands as `github-actions-cli`, and reuses your `gh auth login`
-credentials, so no separate token is needed:
+This installs a precompiled binary for your platform (Linux, macOS or Windows, no Python needed) and adds the
+`gh actions-update` command.
 
 ```shell
-gh actions-update
-gh actions-update update-actions --update
-```
+# Upgrade to the latest release
+gh extension upgrade actions-update
 
-Upgrade it with `gh extension upgrade actions-update`.
-
-### As a Python package
-
-```shell
-pip install github-actions-cli
-```
-
-Or run without installing via `uvx`:
-
-```shell
-uvx github-actions-cli
+# Uninstall
+gh extension remove actions-update
 ```
 
 ## Quick start
 
-Run inside any local GitHub repository clone to see which actions have updates available:
+Run inside any local repository clone to see which actions have updates available:
 
 ```shell
-github-actions-cli
+gh actions-update
 ```
 
 ```text
 GitHub Actions CLI, scanning repo in /path/to/repo
-.github/workflows/test.yml (Test):
-    actions/checkout          v2 ==> v3
-    actions/setup-python      v3 ==> v4
-    release-drafter/release-drafter  v5
-.github/workflows/publish.yml (Publish):
-    pypa/gh-action-pypi-publish  v1
-    actions/checkout          v2 ==> v3
+.github/workflows/publish.yml (Upload Python Package):
+	actions/checkout                           v5 ==> v7.0.1
+	pypa/gh-action-pypi-publish        release/v1
+	actions/setup-python                       v6 ==> v7.1.0
 ```
 
-Actions with an `==>` have a newer version available. To apply the updates, name the
-`update-actions` command and pass `--update`:
+Actions with an `==>` have a newer version available. To apply the updates, name the `update-actions` command and
+pass `--update`:
 
 ```shell
-github-actions-cli update-actions --update
+gh actions-update update-actions --update
 ```
 
-## GitHub token
-
-A GitHub token is required to query the GitHub API for the latest action versions. The token is taken from, in order:
-`--github-token`, the `GITHUB_TOKEN` or `GH_TOKEN` environment variable, and finally `gh auth token` if the
-GitHub CLI is installed and logged in.
+If your workflows pin major tags (`actions/checkout@v5`), add `-m` to keep them that way. Without it, the latest
+full version is suggested (`v7.0.1`), and even an up-to-date `@v7` is flagged because `v7.0.1` is newer:
 
 ```shell
-export GITHUB_TOKEN=ghp_...
-github-actions-cli
+gh actions-update -m update-actions --update
 ```
 
-Writing changes to a **remote** repository also requires the token to have commit permissions on that repository.
+```text
+.github/workflows/publish.yml (Upload Python Package):
+	actions/checkout                           v5 ==> v7
+	pypa/gh-action-pypi-publish        release/v1
+	actions/setup-python                       v6 ==> v7
+```
+
+## Authentication
+
+If you are logged in with `gh auth login`, there is nothing else to set up: the extension uses your GitHub CLI token.
+
+A token is needed to query the GitHub API for the latest action versions. It is taken from, in order:
+
+1. the `--github-token` option
+2. the `GITHUB_TOKEN` or `GH_TOKEN` environment variable
+3. `gh auth token`, the GitHub CLI's logged-in account
+
+Updating a **remote** repository commits to it, so the token needs push access to that repository.
 
 ## Commands
 
 ### `update-actions` (default)
 
-Lists actions that have updates available. Pass `--update` (`-u`) to apply the changes.
+Lists actions that have updates available. Pass `--update` (`-u`) to apply the changes: local workflow files are
+rewritten in place, and remote repositories get a commit.
 
-This is the command that runs when you invoke `github-actions-cli` with no subcommand, but its
-options belong to the subcommand: to pass `--update` you have to spell out `update-actions`.
+This is the command that runs when you invoke `gh actions-update` with no subcommand, but its options belong to the
+subcommand: to pass `--update` you have to spell out `update-actions`.
 
 ```shell
 # Check for updates in the current directory
-github-actions-cli
+gh actions-update
 
 # Apply updates to local workflow files
-github-actions-cli update-actions --update
+gh actions-update update-actions --update
 
 # Check and update a remote repository
-github-actions-cli --repo cunla/fakeredis update-actions --update
+gh actions-update --repo OWNER/REPO update-actions --update
 
 # Use a custom commit message when updating a remote repository
-github-actions-cli --repo cunla/fakeredis update-actions --update -commit-msg "chore: update actions"
+gh actions-update --repo OWNER/REPO update-actions --update -commit-msg "chore: update actions"
 ```
 
 ```text
-Usage: github-actions-cli update-actions [OPTIONS]
+Usage: gh actions-update update-actions [OPTIONS]
+
+  Show actions required updates in repository workflows
 
 Options:
-  -u, --update      Apply updates to workflow files. For remote repos this
-                    creates a commit; for local repos it writes the files.
-  -commit-msg TEXT  Commit message (remote repos only).
-                    [default: chore(ci):update actions]
+  -u, --update      Update actions in workflows (For remote repos: make
+                    changes and commit, for local repos: update files
+  -commit-msg TEXT  Commit msg, only relevant when remote repo  [default:
+                    chore(ci):update actions]
   --help            Show this message and exit.
 ```
 
@@ -117,8 +118,8 @@ Options:
 Lists all workflow files found in a repository.
 
 ```shell
-github-actions-cli list-workflows
-github-actions-cli --repo cunla/fakeredis list-workflows
+gh actions-update list-workflows
+gh actions-update --repo OWNER/REPO list-workflows
 ```
 
 ```text
@@ -131,8 +132,8 @@ github-actions-cli --repo cunla/fakeredis list-workflows
 Lists every action referenced in a specific workflow file.
 
 ```shell
-github-actions-cli list-actions .github/workflows/test.yml
-github-actions-cli --repo cunla/fakeredis list-actions .github/workflows/test.yml
+gh actions-update list-actions .github/workflows/test.yml
+gh actions-update --repo OWNER/REPO list-actions .github/workflows/test.yml
 ```
 
 ```text
@@ -146,22 +147,52 @@ release-drafter/release-drafter@v5
 Scans all GitHub organizations the authenticated user belongs to and prints a CSV summary of their repositories.
 
 ```shell
-github-actions-cli analyze-orgs
-github-actions-cli analyze-orgs --exclude my-org --exclude another-org
+gh actions-update analyze-orgs
+gh actions-update analyze-orgs --exclude my-org --exclude another-org
 ```
 
 ## Global options
 
+Global options go before the command name, for example `gh actions-update --repo OWNER/REPO -m update-actions`.
+
 ```text
-Usage: github-actions-cli [OPTIONS] [COMMAND] [ARGS]...
+Usage: gh actions-update [OPTIONS] [COMMAND] [ARGS]...
 
 Options:
-  --repo TEXT           Repository to scan. Accepts a local path or
-                        owner/repo format.  [default: .]
-  --github-token TEXT   GitHub token. Falls back to the GITHUB_TOKEN
-                        environment variable.
-  -m, --major-only      Only flag updates across major versions (e.g. v1 →
-                        v2). Minor and patch bumps are ignored.
-  -v, --verbose         Increase output verbosity. Pass twice for debug output.
-  --help                Show this message and exit.
+  -v, --verbose        Increase verbosity, can be used multiple times to
+                       increase verbosity
+  --repo TEXT          Repository to analyze, can be a local directory or a
+                       {OWNER}/{REPO} format  [default: .]
+  --github-token TEXT  GitHub token to use. Defaults to GITHUB_TOKEN or
+                       GH_TOKEN, then to `gh auth token`
+  -m, --major-only     Update major versions only, e.g., v1.2.3 will not be
+                       upgraded to v1.2.4 but to v2
+  --help               Show this message and exit.
+
+Commands:
+  analyze-orgs    Analyze organizations
+  list-actions    List actions in a workflow
+  list-workflows  List workflows in repository
+  update-actions  Show actions required updates in repository workflows
 ```
+
+## Using the Python package
+
+The same tool is published on PyPI as `github-actions-cli`, for environments without the GitHub CLI. It needs
+Python 3.10 or newer.
+
+```shell
+pip install github-actions-cli
+
+# or run it without installing
+uvx github-actions-cli
+```
+
+It takes exactly the same options and commands; use `github-actions-cli` wherever this README says
+`gh actions-update`:
+
+```shell
+github-actions-cli -m update-actions --update
+```
+
+Without the GitHub CLI logged in, set `GITHUB_TOKEN` (or pass `--github-token`) to give it a token.
