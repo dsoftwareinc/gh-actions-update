@@ -1,3 +1,17 @@
+## v1.2.5
+
+### 🚀 Features
+
+- Distribute as a precompiled GitHub CLI extension: `gh extension install dsoftwareinc/gh-actions-update`
+- Fall back to `GH_TOKEN` and then `gh auth token` when `GITHUB_TOKEN` is not set
+- Add `python -m gha_cli` entry point
+
+### 🐛 Bug Fixes
+
+- fix: `--major-only` wrote the full version (e.g. `v7.0.1`) into the first workflow using an action instead of the major tag (`v7`)
+- fix: An action pinned to a commit SHA was only flagged as outdated the first time it appeared; later workflows using it showed no update
+- fix: A SHA pin that doesn't exist in the action's repository no longer crashes the scan
+
 ## v1.2.4
 
 ### 🐛 Bug Fixes

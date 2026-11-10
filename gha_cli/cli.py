@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import logging
 import os
+import shutil
+import subprocess
 from collections import namedtuple
 from datetime import datetime, timezone
 from typing import Optional, List, Set, Dict, Union, Any, Tuple
@@ -19,6 +21,11 @@ coloredlogs.install(level="INFO")
 logger = logging.getLogger()
 
 ActionVersion = namedtuple("ActionVersion", ["name", "current", "latest"])
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Treat naive datetimes as UTC so they can be compared with aware ones."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
 def _is_sha(current_version: str) -> bool:
@@ -86,15 +93,12 @@ class GithubActionsTools(object):
             latest_release = self.__actions_latest_release[action_name]
             logging.debug(f"Found in cache {action_name}: {latest_release}")
             if _is_sha(current_version):
-                logging.debug(
-                    f"Current version for {action_name} is a SHA: {current_version}, checking whether latest release is newer"
-                )
-                now = datetime.now(timezone.utc)
-                release_time = latest_release[1]
-                if release_time.tzinfo is None:
-                    release_time = release_time.replace(tzinfo=timezone.utc)
-                if release_time > now:
-                    return latest_release[0]
+                try:
+                    repo = self._get_repo(repo_name)
+                except ValueError:
+                    return None
+                is_newer = self._is_release_newer_than_commit(repo, action_name, current_version, latest_release[1])
+                return latest_release[0] if is_newer else None
             return latest_release[0] if self._compare_versions(latest_release[0], current_version) > 0 else None
 
         logging.debug(f"Checking for updates for {action_name}@{current_version}: Getting repo {repo_name}")
@@ -114,23 +118,38 @@ class GithubActionsTools(object):
             return None
 
         if _is_sha(current_version):
-            logging.debug(
-                f"Current version for {action_name} is a SHA: {current_version}, checking whether latest release is newer"
-            )
-            current_version_commit = repo.get_commit(current_version)
-            if latest_release.last_modified_datetime > current_version_commit.last_modified_datetime:
-                self.__actions_latest_release[action_name] = (
-                    self._fix_version(latest_release.tag_name),
-                    latest_release.last_modified_datetime,
-                )
-                return latest_release.tag_name
+            if self._is_release_newer_than_commit(
+                repo, action_name, current_version, latest_release.last_modified_datetime
+            ):
+                return self._cache_latest_release(action_name, latest_release)
+            return None
         if self._compare_versions(latest_release.tag_name, current_version) > 0:
-            self.__actions_latest_release[action_name] = (
-                self._fix_version(latest_release.tag_name),
-                latest_release.last_modified_datetime,
-            )
-            return latest_release.tag_name
+            return self._cache_latest_release(action_name, latest_release)
         return None
+
+    @staticmethod
+    def _is_release_newer_than_commit(
+        repo: Repository, action_name: str, sha: str, release_time: Optional[datetime]
+    ) -> bool:
+        """Whether the latest release (at release_time) is newer than the commit an action is pinned to."""
+        logging.debug(f"Current version for {action_name} is a SHA: {sha}, checking whether latest release is newer")
+        try:
+            commit_time = repo.get_commit(sha).last_modified_datetime
+        except UnknownObjectException:
+            logging.warning(f"Commit {sha} not found in repository for action: {action_name}")
+            return False
+        if release_time is None or commit_time is None:
+            return False
+        return _as_utc(release_time) > _as_utc(commit_time)
+
+    def _cache_latest_release(self, action_name: str, latest_release: GitRelease) -> str:
+        """Cache the latest release of an action and return its tag, trimmed to the major version if requested.
+
+        The same trimmed tag is returned on cache hits, so every workflow using the action gets the same version.
+        """
+        tag = self._fix_version(latest_release.tag_name)
+        self.__actions_latest_release[action_name] = (tag, latest_release.last_modified_datetime)
+        return tag
 
     @staticmethod
     def is_local_repo(repo_name: str) -> bool:
@@ -269,8 +288,22 @@ class GithubActionsTools(object):
 
 GITHUB_ACTION_NOT_PROVIDED_MSG = """GitHub connection token not provided.
 You might not be able to make the changes to remote repositories.
-You can provide it using GITHUB_TOKEN environment variable or --github-token option.
+You can provide it using GITHUB_TOKEN/GH_TOKEN environment variables, the --github-token option,
+or by logging in with `gh auth login`.
 """
+
+
+def _get_gh_cli_token() -> Optional[str]:
+    """Return the token of the logged-in GitHub CLI user, if gh is installed and authenticated."""
+    gh_path = shutil.which("gh")
+    if gh_path is None:
+        return None
+    try:
+        result = subprocess.run([gh_path, "auth", "token"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    token = result.stdout.strip()
+    return token if result.returncode == 0 and token else None
 
 
 @click.group(invoke_without_command=True)
@@ -286,10 +319,10 @@ You can provide it using GITHUB_TOKEN environment variable or --github-token opt
 )
 @click.option(
     "--github-token",
-    default=os.getenv("GITHUB_TOKEN"),
+    default=lambda: os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN"),
     type=str,
     show_default=False,
-    help="GitHub token to use, by default will use GITHUB_TOKEN environment variable",
+    help="GitHub token to use. Defaults to GITHUB_TOKEN or GH_TOKEN, then to `gh auth token`",
 )
 @click.option(
     "-m",
@@ -307,6 +340,8 @@ def cli(ctx, verbose: int, repo: str, github_token: Optional[str], major_only: b
     ctx.ensure_object(dict)
     repo_name = os.getcwd() if repo == "." else repo
     click.secho(f"GitHub Actions CLI, scanning repo in {repo_name}", fg="green", bold=True)
+    if not github_token:
+        github_token = _get_gh_cli_token()
     if not github_token:
         click.secho(GITHUB_ACTION_NOT_PROVIDED_MSG, fg="yellow", err=True)
     ctx.obj["gh"] = GithubActionsTools(github_token, major_only)

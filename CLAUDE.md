@@ -35,6 +35,10 @@ This is a Python CLI tool (`github-actions-cli`) for managing GitHub Actions wor
 
 **`gha_cli/scanner.py`** — Data classes (`Org`, `Repo`) for the `analyze_orgs` command. They extend `CsvClass` which provides generic CSV serialization via dataclass field introspection. Fields listed in `IGNORE_FIELDS` are excluded from CSV output.
 
+### gh extension
+
+`gha_cli/__main__.py` is the entry point for the PyInstaller binaries built by `.github/workflows/gh-extension.yml` on each release, uploaded as `gh-actions-update-<os>-<arch>[.exe]` so the repo installs as the `gh actions-update` precompiled extension (requires the repo to be named `gh-actions-update`).
+
 ### Authentication
 
-`GITHUB_TOKEN` env var (or `--github-token` flag) is required for remote repos and for writing. Without it the tool still works read-only against local repos.
+`--github-token`, then `GITHUB_TOKEN`/`GH_TOKEN`, then `gh auth token` (`_get_gh_cli_token`) is required for remote repos and for writing. Without it the tool still works read-only against local repos.

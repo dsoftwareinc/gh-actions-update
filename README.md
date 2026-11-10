@@ -2,7 +2,32 @@
 
 A CLI tool for keeping GitHub Actions workflow files up to date. It works with both local repository clones and remote GitHub repositories.
 
+> [!IMPORTANT]
+> **This project is becoming a GitHub CLI extension.** From v1.2.5 on, the recommended way to install it is
+> `gh extension install dsoftwareinc/gh-actions-update`, which adds the `gh actions-update` command.
+> The repository was renamed from `github-actions-cli` to `gh-actions-update` to match.
+> The `github-actions-cli` package on PyPI still works the same way for now, but new development is focused on the extension.
+
 ## Installation
+
+### As a GitHub CLI extension
+
+```shell
+gh extension install dsoftwareinc/gh-actions-update
+```
+
+This installs a precompiled binary (no Python needed) and adds the `gh actions-update` command.
+It takes the same options and commands as `github-actions-cli`, and reuses your `gh auth login`
+credentials, so no separate token is needed:
+
+```shell
+gh actions-update
+gh actions-update update-actions --update
+```
+
+Upgrade it with `gh extension upgrade actions-update`.
+
+### As a Python package
 
 ```shell
 pip install github-actions-cli
@@ -42,7 +67,9 @@ github-actions-cli update-actions --update
 
 ## GitHub token
 
-A `GITHUB_TOKEN` is required to query the GitHub API for the latest action versions. Set it as an environment variable or pass it with `--github-token`.
+A GitHub token is required to query the GitHub API for the latest action versions. The token is taken from, in order:
+`--github-token`, the `GITHUB_TOKEN` or `GH_TOKEN` environment variable, and finally `gh auth token` if the
+GitHub CLI is installed and logged in.
 
 ```shell
 export GITHUB_TOKEN=ghp_...

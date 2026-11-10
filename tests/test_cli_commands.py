@@ -135,9 +135,34 @@ class TestUpdateActionsCommand:
         content = (local_repo / ".github" / "workflows" / "ci.yml").read_text()
         assert "actions/checkout@v4" in content
 
-    def test_missing_token_prints_warning(self, runner, local_repo):
+    def test_missing_token_prints_warning(self, runner, local_repo, mocker, monkeypatch):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        mocker.patch("gha_cli.cli._get_gh_cli_token", return_value=None)
         result = runner.invoke(cli, ["--repo", str(local_repo), "update-actions"])
         assert "GitHub connection token not provided" in result.output
+
+    def test_falls_back_to_gh_cli_token(self, runner, local_repo, mocker, monkeypatch):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        mocker.patch("gha_cli.cli._get_gh_cli_token", return_value="gh-cli-token")
+        tools = mocker.patch("gha_cli.cli.GithubActionsTools")
+        tools.return_value.get_repo_workflow_names.return_value = {}
+        tools.return_value.get_repo_actions_latest.return_value = {}
+        result = runner.invoke(cli, ["--repo", str(local_repo), "update-actions"])
+        assert "GitHub connection token not provided" not in result.output
+        tools.assert_called_once_with("gh-cli-token", False)
+
+    def test_gh_token_env_var_is_used(self, runner, local_repo, mocker, monkeypatch):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.setenv("GH_TOKEN", "env-gh-token")
+        gh_cli = mocker.patch("gha_cli.cli._get_gh_cli_token")
+        tools = mocker.patch("gha_cli.cli.GithubActionsTools")
+        tools.return_value.get_repo_workflow_names.return_value = {}
+        tools.return_value.get_repo_actions_latest.return_value = {}
+        runner.invoke(cli, ["--repo", str(local_repo), "update-actions"])
+        tools.assert_called_once_with("env-gh-token", False)
+        gh_cli.assert_not_called()
 
     def test_default_subcommand_runs_update_actions(self, runner, local_repo, mocker):
         mocker.patch("gha_cli.cli.Github")

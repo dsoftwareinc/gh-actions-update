@@ -176,6 +176,53 @@ class TestGetActionLatestRelease:
         result = tools.get_action_latest_release(f"actions/checkout@{sha}")
         assert result is None
 
+    def _mock_sha_repo(self, tools, release_tag, release_age_days, commit_ages_days):
+        """Mock a repo whose latest release is release_age_days old and whose commits have the given ages."""
+        now = datetime.now(timezone.utc)
+        repo = tools.client.get_repo.return_value
+        repo.get_latest_release.return_value = self._mock_release(release_tag, age_days=release_age_days)
+
+        def get_commit(sha):
+            commit = MagicMock()
+            commit.last_modified_datetime = now - timedelta(days=commit_ages_days[sha])
+            return commit
+
+        repo.get_commit.side_effect = get_commit
+        return repo
+
+    def test_same_sha_pinned_twice_is_flagged_both_times(self, tools):
+        """Regression: the second lookup (served from cache) used to return None for SHA pins."""
+        sha = "a" * 40
+        self._mock_sha_repo(tools, "v3.0.0", release_age_days=1, commit_ages_days={sha: 30})
+        assert tools.get_action_latest_release(f"actions/checkout@{sha}") == "v3.0.0"
+        assert tools.get_action_latest_release(f"actions/checkout@{sha}") == "v3.0.0"
+
+    def test_cached_release_compared_against_each_shas_own_commit(self, tools):
+        old_sha, new_sha = "a" * 40, "b" * 40
+        self._mock_sha_repo(tools, "v3.0.0", release_age_days=10, commit_ages_days={old_sha: 30, new_sha: 1})
+        assert tools.get_action_latest_release(f"actions/checkout@{old_sha}") == "v3.0.0"
+        # new_sha is newer than the cached release, so it is up to date
+        assert tools.get_action_latest_release(f"actions/checkout@{new_sha}") is None
+
+    def test_sha_pin_after_semver_pin_of_same_action(self, tools):
+        sha = "a" * 40
+        self._mock_sha_repo(tools, "v3.0.0", release_age_days=1, commit_ages_days={sha: 30})
+        assert tools.get_action_latest_release("actions/checkout@v2.0.0") == "v3.0.0"
+        assert tools.get_action_latest_release(f"actions/checkout@{sha}") == "v3.0.0"
+
+    def test_unknown_sha_returns_none(self, tools):
+        repo = tools.client.get_repo.return_value
+        repo.get_latest_release.return_value = self._mock_release("v3.0.0")
+        repo.get_commit.side_effect = _unknown_object_exception()
+        assert tools.get_action_latest_release("actions/checkout@" + "c" * 40) is None
+
+    def test_unknown_sha_on_cache_hit_returns_none(self, tools):
+        sha, unknown_sha = "a" * 40, "c" * 40
+        self._mock_sha_repo(tools, "v3.0.0", release_age_days=1, commit_ages_days={sha: 30})
+        tools.get_action_latest_release(f"actions/checkout@{sha}")
+        tools.client.get_repo.return_value.get_commit.side_effect = _unknown_object_exception()
+        assert tools.get_action_latest_release(f"actions/checkout@{unknown_sha}") is None
+
     def test_cache_hit_returns_latest_without_api_call(self, tools):
         GithubActionsTools._GithubActionsTools__actions_latest_release["actions/checkout"] = (
             "v3.0.0",
@@ -220,7 +267,22 @@ class TestGetActionLatestRelease:
             last_modified_datetime=datetime.now(timezone.utc),
         )
         result = tools_major_only.get_action_latest_release("actions/checkout@v3.0.0")
-        assert result == "v4.1.0"
+        assert result == "v4"
+
+    def test_major_only_first_and_cached_lookups_agree(self, tools_major_only):
+        """With --major-only, every workflow using an action must get the same major tag (regression)."""
+        tools_major_only.client.get_repo.return_value.get_latest_release.return_value = self._mock_release("v7.0.1")
+        first = tools_major_only.get_action_latest_release("actions/checkout@v5")
+        cached = tools_major_only.get_action_latest_release("actions/checkout@v5")
+        assert first == cached == "v7"
+        tools_major_only.client.get_repo.assert_called_once()
+
+    def test_major_only_sha_pinned_returns_major_tag(self, tools_major_only):
+        repo = tools_major_only.client.get_repo.return_value
+        repo.get_latest_release.return_value = self._mock_release("v7.0.1", age_days=0)
+        repo.get_commit.return_value.last_modified_datetime = datetime.now(timezone.utc) - timedelta(days=30)
+        result = tools_major_only.get_action_latest_release("actions/checkout@" + "a" * 40)
+        assert result == "v7"
 
 
 class TestGetWorkflowActionNames:

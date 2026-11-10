@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "github-actions-cli"
-version = "1.2.4"
+version = "1.2.5"
 description = "GitHub Actions CLI - allows updating workflows, etc."
 authors = [{ name = "Daniel Moran", email = "daniel@moransoftware.ca" }]
 requires-python = "~=3.10"
@@ -33,9 +33,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dsoftwareinc/github-actions-cli"
-Documentation = "https://github.com/dsoftwareinc/github-actions-cli"
-"Bug Tracker" = "https://github.com/dsoftwareinc/github-actions-cli/issues"
+Homepage = "https://github.com/dsoftwareinc/gh-actions-update"
+Documentation = "https://github.com/dsoftwareinc/gh-actions-update"
+"Bug Tracker" = "https://github.com/dsoftwareinc/gh-actions-update/issues"
 Funding = "https://github.com/sponsors/cunla"
 
 [project.scripts]
