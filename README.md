@@ -4,9 +4,9 @@ A [GitHub CLI](https://cli.github.com/) extension that finds outdated actions in
 updates them. It works with both local repository clones and remote GitHub repositories.
 
 > [!NOTE]
-> This project was previously distributed only as the `github-actions-cli` Python package, and the repository was
-> renamed from `github-actions-cli` to `gh-actions-update`. From v1.2.5 on, the GitHub CLI extension is the recommended
-> way to use it. The Python package still works; see [Using the Python package](#using-the-python-package).
+> From v2.0.0 on, this extension is written in Go. Up to v1.2.5 it was the `github-actions-cli` Python package, which
+> is no longer maintained. The `analyze-orgs` command was dropped in the rewrite; see the [changelog](CHANGELOG.md)
+> for the other changes.
 
 ## Installation
 
@@ -16,7 +16,7 @@ Requires the [GitHub CLI](https://cli.github.com/) (`gh`).
 gh extension install dsoftwareinc/gh-actions-update
 ```
 
-This installs a precompiled binary for your platform (Linux, macOS or Windows, no Python needed) and adds the
+This installs a precompiled binary for your platform (Linux, macOS, Windows or FreeBSD) and adds the
 `gh actions-update` command.
 
 ```shell
@@ -27,9 +27,16 @@ gh extension upgrade actions-update
 gh extension remove actions-update
 ```
 
+It also runs without the GitHub CLI, as the standalone `gh-actions-update` command: download the binary for your
+platform from the [releases page](https://github.com/dsoftwareinc/gh-actions-update/releases), or install it with Go:
+
+```shell
+go install github.com/dsoftwareinc/gh-actions-update/v2@latest
+```
+
 ## Quick start
 
-Run inside any local repository clone to see which actions have updates available:
+Run inside a local repository clone (or any directory in it) to see which actions have updates available:
 
 ```shell
 gh actions-update
@@ -39,30 +46,31 @@ gh actions-update
 GitHub Actions CLI, scanning repo in /path/to/repo
 .github/workflows/publish.yml (Upload Python Package):
 	actions/checkout                           v5 ==> v7.0.1
-	pypa/gh-action-pypi-publish        release/v1
 	actions/setup-python                       v6 ==> v7.1.0
+	pypa/gh-action-pypi-publish        release/v1
 ```
 
-Actions with an `==>` have a newer version available. To apply the updates, name the `update-actions` command and
-pass `--update`:
+Actions with an `==>` have a newer version available. To apply the updates, pass `--update`:
 
 ```shell
-gh actions-update update-actions --update
+gh actions-update --update
 ```
 
 If your workflows pin major tags (`actions/checkout@v5`), add `-m` to keep them that way. Without it, the latest
 full version is suggested (`v7.0.1`), and even an up-to-date `@v7` is flagged because `v7.0.1` is newer:
 
 ```shell
-gh actions-update -m update-actions --update
+gh actions-update -m --update
 ```
 
 ```text
 .github/workflows/publish.yml (Upload Python Package):
 	actions/checkout                           v5 ==> v7
-	pypa/gh-action-pypi-publish        release/v1
 	actions/setup-python                       v6 ==> v7
+	pypa/gh-action-pypi-publish        release/v1
 ```
+
+Actions pinned to a commit SHA are flagged when the commit of the latest release is newer than the pinned one.
 
 ## Authentication
 
@@ -71,8 +79,11 @@ If you are logged in with `gh auth login`, there is nothing else to set up: the 
 A token is needed to query the GitHub API for the latest action versions. It is taken from, in order:
 
 1. the `--github-token` option
-2. the `GITHUB_TOKEN` or `GH_TOKEN` environment variable
-3. `gh auth token`, the GitHub CLI's logged-in account
+2. the `GH_TOKEN` or `GITHUB_TOKEN` environment variable
+3. the GitHub CLI's logged-in account (`gh auth token`)
+
+Without a token, the extension still works with public repositories, but GitHub allows only 60 unauthenticated API
+requests per hour.
 
 Updating a **remote** repository commits to it, so the token needs push access to that repository.
 
@@ -81,36 +92,33 @@ Updating a **remote** repository commits to it, so the token needs push access t
 ### `update-actions` (default)
 
 Lists actions that have updates available. Pass `--update` (`-u`) to apply the changes: local workflow files are
-rewritten in place, and remote repositories get a commit.
+rewritten in place, and remote repositories get one commit per updated workflow.
 
-This is the command that runs when you invoke `gh actions-update` with no subcommand, but its options belong to the
-subcommand: to pass `--update` you have to spell out `update-actions`.
+This is the command that runs when you invoke `gh actions-update` with no subcommand, and it takes the same options
+either way.
 
 ```shell
-# Check for updates in the current directory
+# Check for updates in the current repository
 gh actions-update
 
 # Apply updates to local workflow files
-gh actions-update update-actions --update
+gh actions-update --update
 
 # Check and update a remote repository
-gh actions-update --repo OWNER/REPO update-actions --update
+gh actions-update --repo OWNER/REPO --update
 
 # Use a custom commit message when updating a remote repository
-gh actions-update --repo OWNER/REPO update-actions --update -commit-msg "chore: update actions"
+gh actions-update --repo OWNER/REPO --update --commit-msg "chore: update actions"
 ```
 
 ```text
-Usage: gh actions-update update-actions [OPTIONS]
+Usage:
+  gh actions-update update-actions [flags]
 
-  Show actions required updates in repository workflows
-
-Options:
-  -u, --update      Update actions in workflows (For remote repos: make
-                    changes and commit, for local repos: update files
-  -commit-msg TEXT  Commit msg, only relevant when remote repo  [default:
-                    chore(ci):update actions]
-  --help            Show this message and exit.
+Flags:
+      --commit-msg string   Commit message, only used for remote repos (default "chore(ci):update actions")
+  -h, --help                help for update-actions
+  -u, --update              Update actions in workflows (remote repos: commit the changes, local repos: rewrite the files)
 ```
 
 ### `list-workflows`
@@ -123,16 +131,16 @@ gh actions-update --repo OWNER/REPO list-workflows
 ```
 
 ```text
-.github/workflows/test.yml - Test
 .github/workflows/publish.yml - Publish
+.github/workflows/test.yml - Test
 ```
 
 ### `list-actions`
 
-Lists every action referenced in a specific workflow file.
+Lists every action referenced in a workflow file, given by its path or its file name in `.github/workflows`.
 
 ```shell
-gh actions-update list-actions .github/workflows/test.yml
+gh actions-update list-actions test.yml
 gh actions-update --repo OWNER/REPO list-actions .github/workflows/test.yml
 ```
 
@@ -142,57 +150,45 @@ actions/setup-python@v4
 release-drafter/release-drafter@v5
 ```
 
-### `analyze-orgs`
-
-Scans all GitHub organizations the authenticated user belongs to and prints a CSV summary of their repositories.
-
-```shell
-gh actions-update analyze-orgs
-gh actions-update analyze-orgs --exclude my-org --exclude another-org
-```
-
 ## Global options
 
-Global options go before the command name, for example `gh actions-update --repo OWNER/REPO -m update-actions`.
+Global options can go before or after the command name, for example
+`gh actions-update --repo OWNER/REPO -m update-actions`.
 
 ```text
-Usage: gh actions-update [OPTIONS] [COMMAND] [ARGS]...
+Usage:
+  gh actions-update [flags]
+  gh actions-update [command]
 
-Options:
-  -v, --verbose        Increase verbosity, can be used multiple times to
-                       increase verbosity
-  --repo TEXT          Repository to analyze, can be a local directory or a
-                       {OWNER}/{REPO} format  [default: .]
-  --github-token TEXT  GitHub token to use. Defaults to GITHUB_TOKEN or
-                       GH_TOKEN, then to `gh auth token`
-  -m, --major-only     Update major versions only, e.g., v1.2.3 will not be
-                       upgraded to v1.2.4 but to v2
-  --help               Show this message and exit.
+Available Commands:
+  help           Help about any command
+  list-actions   List actions in a workflow
+  list-workflows List workflows in repository
+  update-actions Show actions that have updates in repository workflows, and optionally update them
 
-Commands:
-  analyze-orgs    Analyze organizations
-  list-actions    List actions in a workflow
-  list-workflows  List workflows in repository
-  update-actions  Show actions required updates in repository workflows
+Flags:
+      --commit-msg string     Commit message, only used for remote repos (default "chore(ci):update actions")
+      --github-token string   GitHub token to use. Defaults to GH_TOKEN or GITHUB_TOKEN, then to "gh auth token"
+  -h, --help                  help for gh actions-update
+  -m, --major-only            Update major versions only, e.g., v1.2.3 will not be upgraded to v1.2.4 but to v2
+      --repo string           Repository to analyze, a local directory or OWNER/REPO (default ".")
+  -u, --update                Update actions in workflows (remote repos: commit the changes, local repos: rewrite the files)
+  -v, --verbose count         Increase verbosity: -v shows progress, -vv debug details
+      --version               version for gh actions-update
 ```
 
-## Using the Python package
+## Development
 
-The same tool is published on PyPI as `github-actions-cli`, for environments without the GitHub CLI. It needs
-Python 3.10 or newer.
+Requires Go (see `go.mod` for the version).
 
 ```shell
-pip install github-actions-cli
+# Run the tests
+go test ./...
 
-# or run it without installing
-uvx github-actions-cli
+# Build, then run your build as `gh actions-update`
+go build -o gh-actions-update .
+gh extension install .
 ```
 
-It takes exactly the same options and commands; use `github-actions-cli` wherever this README says
-`gh actions-update`:
-
-```shell
-github-actions-cli -m update-actions --update
-```
-
-Without the GitHub CLI logged in, set `GITHUB_TOKEN` (or pass `--github-token`) to give it a token.
+Publishing a GitHub release builds the binaries for all platforms and attaches them to it
+(`.github/workflows/gh-extension.yml`).

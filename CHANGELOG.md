@@ -1,3 +1,34 @@
+## v2.0.0
+
+Rewritten in Go.
+
+### ⚠️ Breaking Changes
+
+- The `github-actions-cli` Python package is no longer maintained; v1.2.5 is its last release. Use the
+  `gh actions-update` GitHub CLI extension, or the standalone `gh-actions-update` binary from the releases page
+- Removed the `analyze-orgs` command
+- Log messages are hidden by default: `-v` shows progress messages, `-vv` debug details
+- `GH_TOKEN` takes precedence over `GITHUB_TOKEN`, as in the GitHub CLI
+- Local workflow paths are shown relative to the repository root (`.github/workflows/ci.yml`)
+- The commit message option is `--commit-msg` (the old `-commit-msg` spelling still works)
+
+### 🚀 Features
+
+- `--update` and `--commit-msg` work without spelling out `update-actions`: `gh actions-update --update`
+- Latest releases are looked up in parallel, and each action repository is queried only once
+- Works from any directory inside a local clone, not only its root
+- `list-actions` accepts a workflow file name: `gh actions-update list-actions ci.yml`
+- Actions are listed in the order they appear in the workflow
+- `--version` option
+- Prebuilt binaries for FreeBSD, 32-bit Linux (x86 and ARM), 32-bit Windows and Windows on ARM
+
+### 🐛 Bug Fixes
+
+- fix: An action pinned to the commit SHA of its latest release was reported as outdated
+- fix: Updating `actions/checkout@v4` could also rewrite `actions/checkout@v4.1.0` in the same workflow (to `@v5.0.0.1.0`)
+- fix: `--update` rewrote or committed every workflow, including those without updates
+- fix: A workflow that isn't valid YAML no longer aborts the scan; it is skipped with a warning
+
 ## v1.2.5
 
 ### 🚀 Features

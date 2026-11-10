@@ -1,4 +1,5 @@
 .idea
-.venv
 dist
-__pycache__
+/gh-actions-update
+/gh-actions-update.exe
+settings.local.json

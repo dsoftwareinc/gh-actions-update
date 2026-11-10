@@ -1,5 +1,5 @@
-# Builds standalone binaries of the CLI and attaches them to the GitHub release, so it can be
-# installed as a precompiled GitHub CLI extension: `gh extension install dsoftwareinc/gh-actions-update`.
+# Builds the binaries of the extension and attaches them to the GitHub release, so it can be installed as a
+# precompiled GitHub CLI extension: `gh extension install dsoftwareinc/gh-actions-update`.
 # gh picks the release asset named `gh-actions-update-<os>-<arch>[.exe]` matching the user's platform.
 
 name: Release gh extension binaries
@@ -17,50 +17,45 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.asset }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            asset: gh-actions-update-linux-amd64
-          - runner: ubuntu-24.04-arm
-            asset: gh-actions-update-linux-arm64
-          - runner: macos-15-intel
-            asset: gh-actions-update-darwin-amd64
-          - runner: macos-latest
-            asset: gh-actions-update-darwin-arm64
-          - runner: windows-latest
-            asset: gh-actions-update-windows-amd64.exe
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          ref: ${{ env.TAG }}
 
-      - name: Install dependencies
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Test
         run: |
-          python -m pip install --upgrade pip
-          pip install . pyinstaller
+          go vet ./...
+          go test ./...
 
-      - name: Build binary
-        run: pyinstaller --onefile --clean --noconfirm --name gh-actions-update --paths . gha_cli/__main__.py
+      - name: Build binaries
+        run: |
+          platforms=(
+            darwin/amd64 darwin/arm64
+            freebsd/amd64 freebsd/arm64
+            linux/386 linux/amd64 linux/arm linux/arm64
+            windows/386 windows/amd64 windows/arm64
+          )
+          for platform in "${platforms[@]}"; do
+            goos=${platform%/*} goarch=${platform#*/}
+            ext=""
+            [[ $goos == windows ]] && ext=".exe"
+            CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -ldflags "-s -w -X main.version=$TAG" \
+              -o "dist/gh-actions-update-$goos-$goarch$ext" .
+          done
 
       - name: Smoke test
-        shell: bash
-        run: ./dist/gh-actions-update* --help
+        run: ./dist/gh-actions-update-linux-amd64 --version
 
       - name: Upload to release
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: |
-          src=dist/gh-actions-update
-          [[ "$RUNNER_OS" == "Windows" ]] && src="$src.exe"
-          cp "$src" "${{ matrix.asset }}"
-          gh release upload "$TAG" "${{ matrix.asset }}" --clobber
+        run: gh release upload "$TAG" dist/* --clobber
